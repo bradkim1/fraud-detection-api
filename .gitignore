@@ -1,0 +1,5 @@
+# Ignore large model files
+model/model.pkl
+model/*.pkl
+# Keep small model files
+!model/model_minimal.pkl
