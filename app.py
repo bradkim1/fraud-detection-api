@@ -1,10 +1,10 @@
 import os
 import sys
-import glob
 import joblib
 import pandas as pd
 import numpy as np
-from fastapi import FastAPI, HTTPException, Request
+import json
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, Union
@@ -15,115 +15,68 @@ app = FastAPI(title="Fraud Detection API")
 # Global variables for model components
 model = None
 feature_columns = None
-
-# Error handler
-@app.exception_handler(Exception)
-async def generic_exception_handler(request: Request, exc: Exception):
-    return JSONResponse(
-        status_code=500,
-        content={"message": f"Internal Server Error: {str(exc)}"},
-    )
-
-def find_file(filename, search_paths=None):
-    """Search for a file in multiple directories and return its path if found."""
-    if search_paths is None:
-        # Default search paths
-        search_paths = [
-            os.path.dirname(os.path.abspath(__file__)),  # Current script directory
-            os.getcwd(),  # Current working directory
-            "/opt/render/project/src/",  # Render.com project directory
-            "/opt/render/project/",  # Render.com parent directory
-            "/tmp/"  # Temporary directory
-        ]
-    
-    # Add parent directories to search paths
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    parent_dir = os.path.dirname(base_dir)
-    search_paths.extend([parent_dir, os.path.dirname(parent_dir)])
-    
-    # Search each path
-    for path in search_paths:
-        file_path = os.path.join(path, filename)
-        if os.path.exists(file_path):
-            return file_path
-    
-    # Use glob to find the file anywhere in the project directory
-    for path in search_paths:
-        matches = glob.glob(os.path.join(path, "**", filename), recursive=True)
-        if matches:
-            return matches[0]
-    
-    return None
+model_found = False
 
 # Load model components
 @app.on_event("startup")
 async def load_model():
-    global model, feature_columns
+    global model, feature_columns, model_found
     try:
         print("Starting model loading...")
         
-        # Extensive filesystem debugging
-        print(f"Current working directory: {os.getcwd()}")
-        print(f"Script directory: {os.path.dirname(os.path.abspath(__file__))}")
-        print("Files in current directory:")
-        for file in os.listdir(os.getcwd()):
-            file_path = os.path.join(os.getcwd(), file)
-            if os.path.isfile(file_path):
-                file_size = os.path.getsize(file_path) / (1024 * 1024)  # Size in MB
-                print(f"  - {file} ({file_size:.2f} MB)")
-            else:
-                print(f"  - {file} (directory)")
+        # List of possible model paths to try
+        model_paths = [
+            "/opt/render/project/src/model/model_minimal.pkl",
+            "/opt/render/project/src/model.pkl",
+            "/opt/render/project/src/model/model.pkl",
+            "model_minimal.pkl",
+            "model.pkl"
+        ]
         
-        # Search for the model files
-        model_path = find_file("model.pkl")
-        features_path = find_file("feature_columns.pkl")
+        # List of possible feature column paths
+        feature_paths = [
+            "/opt/render/project/src/feature_columns.pkl",
+            "/opt/render/project/src/model/feature_columns.pkl",
+            "feature_columns.pkl"
+        ]
         
-        print(f"Found model path: {model_path}")
-        print(f"Found features path: {features_path}")
+        # Try each model path
+        model_loaded = False
+        for model_path in model_paths:
+            if os.path.exists(model_path):
+                print(f"Found model at: {model_path}")
+                try:
+                    model = joblib.load(model_path)
+                    print(f"Successfully loaded model: {type(model)}")
+                    model_loaded = True
+                    model_found = True
+                    break
+                except Exception as e:
+                    print(f"Error loading model from {model_path}: {str(e)}")
         
-        # Check files exist
-        if model_path is None:
-            print("Error: Model file not found anywhere in search paths")
-            
-            # Search for any .pkl files to see what's available
-            print("Searching for any .pkl files:")
-            for path in [os.getcwd(), os.path.dirname(os.path.abspath(__file__)), "/opt/render/project/src/"]:
-                pkls = glob.glob(os.path.join(path, "**", "*.pkl"), recursive=True)
-                for pkl in pkls:
-                    print(f"  - Found: {pkl}")
-            
-            return
-            
-        if features_path is None:
-            print("Error: Feature columns file not found anywhere in search paths")
-            return
-            
-        # Check permissions
-        print(f"Model file permissions: {oct(os.stat(model_path).st_mode)}")
-        print(f"Features file permissions: {oct(os.stat(features_path).st_mode)}")
+        if not model_loaded:
+            print("Could not load model from any path. Using fallback.")
+            # We'll continue without a model
         
-        # Load model and feature columns
-        print("Loading model file...")
-        try:
-            model = joblib.load(model_path)
-            print(f"Model loaded successfully: {type(model)}")
-        except Exception as model_error:
-            print(f"Error loading model: {str(model_error)}")
-            import traceback
-            traceback.print_exc()
-            return
+        # Try each feature columns path
+        features_loaded = False
+        for features_path in feature_paths:
+            if os.path.exists(features_path):
+                print(f"Found feature columns at: {features_path}")
+                try:
+                    feature_columns = joblib.load(features_path)
+                    print(f"Successfully loaded feature columns: {len(feature_columns)} features")
+                    features_loaded = True
+                    break
+                except Exception as e:
+                    print(f"Error loading feature columns from {features_path}: {str(e)}")
         
-        print("Loading feature columns...")
-        try:
-            feature_columns = joblib.load(features_path)
-            print(f"Feature columns loaded successfully: {len(feature_columns)} features")
-        except Exception as feature_error:
-            print(f"Error loading feature columns: {str(feature_error)}")
-            import traceback
-            traceback.print_exc()
-            return
+        if not features_loaded:
+            print("Could not load feature columns from any path. Using fallback feature list.")
+            # Create a minimal set of feature columns for fallback
+            feature_columns = ["TransactionAmt", "ProductCD", "card4", "card6", "DeviceType", "DeviceInfo", "M1"]
         
-        print("Both model and feature columns loaded successfully!")
+        print(f"Startup complete. Model loaded: {model_loaded}, Features loaded: {features_loaded}")
         
     except Exception as e:
         print(f"Error during model loading: {str(e)}")
@@ -148,45 +101,78 @@ class TransactionRequest(BaseModel):
 # Health check endpoint
 @app.get("/")
 def health_check():
-    global model, feature_columns
+    global model, feature_columns, model_found
     return {
         "status": "ok", 
         "message": "Fraud Detection API is running",
         "model_loaded": model is not None,
         "features_loaded": feature_columns is not None,
+        "model_found": model_found,
         "model_type": str(type(model)) if model else None,
         "feature_count": len(feature_columns) if feature_columns else 0
     }
 
-# Debug endpoint
+# File system debug endpoint
 @app.get("/debug")
-def debug():
-    """Endpoint to debug file system and model loading issues"""
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    cwd = os.getcwd()
+def debug_info():
+    # Get information about the file system
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        cwd = os.getcwd()
+        
+        # Look for model files in various locations
+        model_files = []
+        for root, dirs, files in os.walk("/opt/render/project"):
+            for file in files:
+                if file.endswith(".pkl"):
+                    full_path = os.path.join(root, file)
+                    size = os.path.getsize(full_path) / (1024 * 1024)  # MB
+                    model_files.append({"path": full_path, "size_mb": f"{size:.2f}"})
+        
+        return {
+            "base_dir": base_dir,
+            "current_dir": cwd,
+            "python_version": sys.version,
+            "model_loaded": model is not None,
+            "model_found": model_found,
+            "features_loaded": feature_columns is not None,
+            "pkl_files_found": model_files,
+            "env_vars": {k: v for k, v in os.environ.items() if not k.startswith("AWS") and not "KEY" in k and not "SECRET" in k}
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+# Fallback prediction function - returns a prediction even without a model
+def predict_fallback(transaction_data):
+    # This is a very simple heuristic to provide a fallback:
+    # High transaction amounts are more likely to be fraud
+    amount = transaction_data.get("TransactionAmt", 0)
+    product = transaction_data.get("ProductCD", "")
     
-    # Get list of files in various directories
-    base_files = os.listdir(base_dir) if os.path.exists(base_dir) else []
-    cwd_files = os.listdir(cwd) if os.path.exists(cwd) else []
-    render_files = os.listdir("/opt/render/project/src/") if os.path.exists("/opt/render/project/src/") else []
+    # Simple rule-based fallback
+    fraud_probability = 0.1  # Default low probability
     
-    # Check for model files
-    model_path = find_file("model.pkl")
-    features_path = find_file("feature_columns.pkl")
+    if amount > 1000:
+        fraud_probability += 0.2
+    
+    if product == "W":  # Assuming "W" might be higher risk
+        fraud_probability += 0.1
+    
+    if transaction_data.get("DeviceInfo", "") == "Windows":
+        fraud_probability += 0.05
+    
+    # Cap probability at 0.9
+    fraud_probability = min(fraud_probability, 0.9)
+    
+    # Return prediction (1 if probability > 0.5)
+    prediction = 1 if fraud_probability > 0.5 else 0
     
     return {
-        "base_dir": base_dir,
-        "cwd": cwd,
-        "model_path": model_path,
-        "features_path": features_path,
-        "base_files": base_files,
-        "cwd_files": cwd_files,
-        "render_files": render_files,
-        "model_exists": os.path.exists(model_path) if model_path else False,
-        "features_exists": os.path.exists(features_path) if features_path else False,
-        "python_version": sys.version,
-        "model_loaded": model is not None,
-        "features_loaded": feature_columns is not None
+        "status": "success",
+        "prediction": prediction,
+        "fraudProbability": fraud_probability,
+        "model_version": "fallback v1.0",
+        "is_fallback": True
     }
 
 # Prediction endpoint
@@ -194,24 +180,22 @@ def debug():
 async def predict(request: TransactionRequest):
     global model, feature_columns
     
-    # Check if model is loaded
+    # Get transaction data
+    transaction_data = request.data.dict()
+    
+    # If model or features aren't loaded, use fallback
     if model is None or feature_columns is None:
-        return {
-            "status": "error",
-            "message": "Model not loaded properly. Check server logs.",
-            "fallback_prediction": {
-                "prediction": 0,
-                "fraudProbability": 0.01,
-                "model_version": "fallback v1.0"
-            }
-        }
+        print("Model or features not loaded, using fallback prediction")
+        return predict_fallback(transaction_data)
     
     try:
-        # Get transaction data
-        transaction_data = request.data.dict()
-        
         # Create a DataFrame with zeros for all expected features
-        prediction_df = pd.DataFrame(0, index=[0], columns=feature_columns)
+        if isinstance(feature_columns, list):
+            # If feature_columns is just a list of column names
+            prediction_df = pd.DataFrame(0, index=[0], columns=feature_columns)
+        else:
+            # If feature_columns is something else (like ndarray or Index)
+            prediction_df = pd.DataFrame(0, index=[0], columns=feature_columns)
         
         # Fill in the values we have from the input
         df = pd.DataFrame([transaction_data])
@@ -220,14 +204,19 @@ async def predict(request: TransactionRequest):
                 prediction_df[col] = df[col].values
         
         # Make prediction
-        prediction = model.predict(prediction_df)[0]
-        probability = model.predict_proba(prediction_df)[0][1]
+        try:
+            prediction = model.predict(prediction_df)[0]
+            probability = model.predict_proba(prediction_df)[0][1]
+        except Exception as pred_error:
+            print(f"Error in model prediction: {str(pred_error)}")
+            return predict_fallback(transaction_data)
         
         return {
             "status": "success",
             "prediction": int(prediction),
             "fraudProbability": float(probability),
-            "model_version": "v1.0"
+            "model_version": "v1.0 (minimal)",
+            "is_fallback": False
         }
     except Exception as e:
         print(f"Prediction error: {str(e)}")
@@ -235,15 +224,13 @@ async def predict(request: TransactionRequest):
         import traceback
         traceback.print_exc()
         
-        return {
-            "status": "error",
-            "message": f"Error making prediction: {str(e)}",
-            "fallback_prediction": {
-                "prediction": 0,
-                "fraudProbability": 0.5,
-                "model_version": "fallback v1.0"
-            }
-        }
+        # Use fallback on error
+        return predict_fallback(transaction_data)
+
+# Test endpoint that doesn't require the model
+@app.get("/test")
+def test():
+    return {"message": "API is working correctly"}
 
 # For local development
 if __name__ == "__main__":
