@@ -1,4 +1,3 @@
-cat > app.py << 'EOF'
 import os
 import sys
 import joblib
@@ -151,4 +150,3 @@ async def predict(request: TransactionRequest):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
-EOF
