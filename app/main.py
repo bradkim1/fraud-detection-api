@@ -8,7 +8,160 @@ import numpy as np
 from typing import Dict, Any
 import os
 import sys
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 
+# At your root endpoint, add support for HEAD method
+@app.get("/")
+@app.head("/")  # Add this line to support HEAD requests
+def read_root():
+    return {"status": "ok", "message": "Fraud Detection API is running"}
+# Add this endpoint
+@app.get("/test")
+def test_endpoint():
+    return {
+        "status": "ok",
+        "message": "Test endpoint is working",
+        "timestamp": str(datetime.datetime.now())
+    }
+import platform
+import datetime
+
+@app.get("/health")
+def health_check():
+    # Check if the model directory exists
+    model_dir_exists = os.path.exists("/opt/render/project/src/model")
+    
+    # Check if feature_columns.pkl exists
+    feature_columns_exists = os.path.exists("/opt/render/project/src/model/feature_columns.pkl")
+    
+    # List files in the model directory
+    model_files = os.listdir("/opt/render/project/src/model") if model_dir_exists else []
+    
+    return {
+        "status": "healthy",
+        "model_approach": "rules-based",
+        "version": "1.0",
+        "environment": {
+            "python_version": platform.python_version(),
+            "system": platform.system(),
+            "processor": platform.processor()
+        },
+        "diagnostics": {
+            "model_dir_exists": model_dir_exists,
+            "feature_columns_exists": feature_columns_exists,
+            "model_files": model_files,
+            "current_time": str(datetime.datetime.now())
+        }
+    }
+@app.post("/predict")
+async def predict(transaction: TransactionData):
+    try:
+        # Get transaction data
+        data = transaction.data
+        
+        # Handle potential missing or invalid fields
+        try:
+            amt = float(data.get("TransactionAmt", 0))
+        except (ValueError, TypeError):
+            amt = 0
+            
+        product = str(data.get("ProductCD", ""))
+        card_type = str(data.get("card4", ""))
+        card_category = str(data.get("card6", ""))
+        device_type = str(data.get("DeviceType", ""))
+        device_info = str(data.get("DeviceInfo", ""))
+        m1 = str(data.get("M1", "T"))
+        
+        # Rule-based factors
+        base_prob = 0.05
+        
+        # Amount factor (higher amounts = higher risk)
+        if amt > 1000:
+            amt_factor = 0.3
+        elif amt > 500:
+            amt_factor = 0.15
+        else:
+            amt_factor = 0.05
+            
+        # Product code factor
+        product_factors = {"W": 0.2, "C": 0.05, "H": 0.1, "S": 0.15, "R": 0.03}
+        product_factor = product_factors.get(product, 0.05)
+        
+        # Card type factor
+        if card_type.lower() == "american express":
+            card_factor = 0.1
+        elif card_type.lower() == "visa" and card_category.lower() == "credit":
+            card_factor = 0.05
+        else:
+            card_factor = 0.02
+            
+        # Device factor
+        if device_type.lower() == "mobile" and device_info.lower() == "android":
+            device_factor = 0.15
+        elif device_type.lower() == "desktop" and device_info.lower() != "windows":
+            device_factor = 0.05
+        else:
+            device_factor = 0.01
+            
+        # M1 flag factor
+        m1_factors = {"T": 0.02, "F": 0.15, "M": 0.08}
+        m1_factor = m1_factors.get(m1, 0.02)
+        
+        # Add a small random variation
+        import random
+        random_factor = random.uniform(-0.05, 0.05)
+        
+        # Calculate final probability
+        fraud_prob = base_prob + amt_factor + product_factor + card_factor + device_factor + m1_factor + random_factor
+        
+        # Ensure probability is between 0 and 1
+        fraud_prob = max(0, min(0.95, fraud_prob))
+        
+        # Create risk factors explanation
+        risk_factors = []
+        if amt > 1000:
+            risk_factors.append("High transaction amount")
+        if product == "W":
+            risk_factors.append("High-risk product category")
+        if card_type.lower() == "american express":
+            risk_factors.append("Card type associated with higher fraud rates")
+        if device_type.lower() == "mobile" and device_info.lower() == "android":
+            risk_factors.append("Device type associated with higher fraud rates")
+        if m1 == "F":
+            risk_factors.append("Suspicious M1 flag value")
+        
+        return {
+            "prediction": 1 if fraud_prob > 0.5 else 0,
+            "fraudProbability": float(fraud_prob),
+            "model_version": "v1.0-rules",
+            "risk_factors": risk_factors,
+            "timestamp": str(datetime.datetime.now())
+        }
+    
+    except Exception as e:
+        # Log the error
+        print(f"Prediction error: {str(e)}")
+        
+        # Return a graceful error response
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "Prediction failed",
+                "message": str(e),
+                "timestamp": str(datetime.datetime.now())
+            }
+        )
+from fastapi.middleware.cors import CORSMiddleware
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 # Print debugging information
 print("Python version:", sys.version)
 print("Current working directory:", os.getcwd())
