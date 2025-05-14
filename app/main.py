@@ -7,6 +7,50 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any
 import os
+import sys
+
+# Print debugging information
+print("Python version:", sys.version)
+print("Current working directory:", os.getcwd())
+print("Files in current directory:", os.listdir("."))
+print("Files in parent directory:", os.listdir("..") if os.path.exists("..") else "Cannot access parent directory")
+print("Files in /opt/render/project/src:", os.listdir("/opt/render/project/src") if os.path.exists("/opt/render/project/src") else "Cannot access directory")
+if os.path.exists("/opt/render/project/src/model"):
+    print("Files in /opt/render/project/src/model:", os.listdir("/opt/render/project/src/model"))
+else:
+    print("Cannot access /opt/render/project/src/model - directory doesn't exist")
+# Add this function to your main.py
+def create_files_if_missing():
+    print("Checking for missing model files...")
+    
+    # Define model directory
+    model_dir = "/opt/render/project/src/model"
+    
+    # Create model directory if it doesn't exist
+    if not os.path.exists(model_dir):
+        print(f"Creating model directory: {model_dir}")
+        os.makedirs(model_dir, exist_ok=True)
+    
+    # Create feature_columns.pkl if it doesn't exist
+    feature_columns_path = os.path.join(model_dir, "feature_columns.pkl")
+    if not os.path.exists(feature_columns_path):
+        print(f"Creating {feature_columns_path}")
+        import joblib
+        feature_columns = [
+            "TransactionAmt", "ProductCD_W", "ProductCD_C", "ProductCD_H", "ProductCD_S", "ProductCD_R",
+            "card4_visa", "card4_mastercard", "card4_american express", "card4_discover",
+            "card6_credit", "card6_debit", "card6_charge",
+            "DeviceType_desktop", "DeviceType_mobile",
+            "M1_T", "M1_F", "M1_M"
+        ]
+        joblib.dump(feature_columns, feature_columns_path)
+        print(f"Created {feature_columns_path}")
+    
+    # Create other files that might be needed...
+    print("File check complete.")
+
+# Call this function at the top of your app initialization
+create_files_if_missing()
 
 # Set up the FastAPI app
 app = FastAPI(title="Fraud Detection API")
