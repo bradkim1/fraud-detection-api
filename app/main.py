@@ -19,14 +19,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Define model paths with flexible base directory
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_DIR = os.path.join(BASE_DIR, "model")
+# Alternative model directory for Render
+RENDER_MODEL_DIR = "/opt/render/project/src/model"
 
-# Define model paths
-MODEL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "model")
+# Check which directory exists and use that
+if os.path.exists(RENDER_MODEL_DIR):
+    MODEL_DIR = RENDER_MODEL_DIR
+    print(f"Using Render model directory: {MODEL_DIR}")
+else:
+    print(f"Using local model directory: {MODEL_DIR}")
+
+# Define file paths
 MODEL_PATH = os.path.join(MODEL_DIR, "model_minimal.pkl")
 SCALER_PATH = os.path.join(MODEL_DIR, "scaler.pkl")
 ENCODER_PATH = os.path.join(MODEL_DIR, "encoder.pkl")
 FEATURE_COLUMNS_PATH = os.path.join(MODEL_DIR, "feature_columns.pkl")
-
 # Load model components
 try:
     model = joblib.load(MODEL_PATH)
