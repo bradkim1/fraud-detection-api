@@ -10,6 +10,8 @@ import os
 import sys
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+# Set up the FastAPI app
+app = FastAPI(title="Fraud Detection API")
 
 # At your root endpoint, add support for HEAD method
 @app.get("/")
@@ -205,8 +207,6 @@ def create_files_if_missing():
 # Call this function at the top of your app initialization
 create_files_if_missing()
 
-# Set up the FastAPI app
-app = FastAPI(title="Fraud Detection API")
 
 # Enable CORS to allow requests from Hugging Face Spaces
 app.add_middleware(
