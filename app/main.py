@@ -56,6 +56,10 @@ def health_check():
             "current_time": str(datetime.datetime.now())
         }
     }
+class TransactionData(BaseModel):
+    data: Dict[str, Any]
+
+
 @app.post("/predict")
 async def predict(transaction: TransactionData):
     try:
@@ -244,8 +248,8 @@ except Exception as e:
     MODEL_LOADED = False
 
 # Define input data model
-class TransactionData(BaseModel):
-    data: Dict[str, Any]
+#class TransactionData(BaseModel):
+#    data: Dict[str, Any]
 
 # Root endpoint
 @app.get("/")
