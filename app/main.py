@@ -50,69 +50,43 @@ def read_root():
 def health_check():
     return {
         "status": "healthy" if MODEL_LOADED else "unhealthy",
-        "model_loaded": MODEL_LOADED
     }
 
 # Prediction endpoint
+
+# In your prediction endpoint
 @app.post("/predict")
 async def predict(transaction: TransactionData):
-    if not MODEL_LOADED:
-        # For bootcamp purposes, use a simplified prediction if model doesn't load
-        data = transaction.data
-        # Calculate a simplified fraud score
-        amt = data.get("TransactionAmt", 0)
-        product = data.get("ProductCD", "")
-        card_type = data.get("card4", "")
-        device_type = data.get("DeviceType", "")
-        
-        # Simple rules-based score
-        base_prob = 0.05
-        amt_factor = 0.3 if amt > 1000 else (0.15 if amt > 500 else 0.05)
-        product_factor = 0.2 if product == "W" else 0.05
-        card_factor = 0.1 if card_type == "american express" else 0.02
-        device_factor = 0.15 if device_type == "mobile" else 0.01
-        
-        # Calculate probability
-        import random
-        fraud_prob = base_prob + amt_factor + product_factor + card_factor + device_factor + random.uniform(-0.05, 0.05)
-        fraud_prob = max(0, min(0.95, fraud_prob))
-        
-        return {
-            "prediction": 1 if fraud_prob > 0.5 else 0,
-            "fraudProbability": fraud_prob,
-            "model_version": "v1.0-simplified",
-            "note": "Using simplified prediction logic as model could not be loaded"
-        }
+    # Always use the fallback prediction method
+    # Get transaction data
+    data = transaction.data
     
-    try:
-        # Convert input to DataFrame
-        df = pd.DataFrame([transaction.data])
-        
-        # For a real implementation, you would:
-        # 1. Process the data (handle missing values, encode categoricals, etc.)
-        # 2. Ensure the DataFrame has all required features
-        # 3. Align feature columns with what the model expects
-        
-        # For bootcamp demo, we'll use a simplified approach:
-        prediction_df = pd.DataFrame(0, index=[0], columns=feature_columns)
-        
-        # Fill in values we have
-        for col in df.columns:
-            if col in prediction_df.columns:
-                prediction_df[col] = df[col].values
-        
-        # Make prediction
-        prediction = model.predict(prediction_df)[0]
-        probability = model.predict_proba(prediction_df)[0][1]
-        
-        return {
-            "prediction": int(prediction),
-            "fraudProbability": float(probability),
-            "model_version": "v1.0"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
-
+    # Calculate a simplified fraud score
+    amt = float(data.get("TransactionAmt", 0))
+    product = data.get("ProductCD", "")
+    card_type = data.get("card4", "")
+    device_type = data.get("DeviceType", "")
+    
+    # Simple rules-based score
+    base_prob = 0.05
+    amt_factor = 0.3 if amt > 1000 else (0.15 if amt > 500 else 0.05)
+    product_factor = 0.2 if product == "W" else 0.05
+    card_factor = 0.1 if card_type == "american express" else 0.02
+    device_factor = 0.15 if device_type == "mobile" else 0.01
+    m1 = data.get("M1", "T")
+    m1_factor = 0.15 if m1 == "F" else (0.08 if m1 == "M" else 0.02)
+    
+    # Calculate probability
+    import random
+    fraud_prob = base_prob + amt_factor + product_factor + card_factor + device_factor + m1_factor + random.uniform(-0.05, 0.05)
+    fraud_prob = max(0, min(0.95, fraud_prob))
+    
+    return {
+        "prediction": 1 if fraud_prob > 0.5 else 0,
+        "fraudProbability": fraud_prob,
+        "model_version": "v1.0-simplified",
+        "note": "Using simplified prediction logic for demo purposes"
+    }
 # For local testing
 if __name__ == "__main__":
     import uvicorn
