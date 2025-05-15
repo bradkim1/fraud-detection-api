@@ -183,41 +183,58 @@ async def predict(request: TransactionRequest):
     # Get transaction data
     transaction_data = request.data.dict()
     
-    # If model or features aren't loaded, use fallback
-    if model is None or feature_columns is None:
-        print("Model or features not loaded, using fallback prediction")
-        return predict_fallback(transaction_data)
-    
     try:
-        # Create a DataFrame with zeros for all expected features
-        if isinstance(feature_columns, list):
-            # If feature_columns is just a list of column names
-            prediction_df = pd.DataFrame(0, index=[0], columns=feature_columns)
-        else:
-            # If feature_columns is something else (like ndarray or Index)
-            prediction_df = pd.DataFrame(0, index=[0], columns=feature_columns)
+        # If model is not loaded, use fallback
+        if model is None:
+            print("Model not loaded, using fallback prediction")
+            return predict_fallback(transaction_data)
         
-        # Fill in the values we have from the input
-        df = pd.DataFrame([transaction_data])
-        for col in df.columns:
-            if col in prediction_df.columns:
-                prediction_df[col] = df[col].values
+        print(f"Using model of type: {type(model)}")
+        
+        # Create input features - simplify for RandomForestClassifier
+        # We'll extract just the values in the order of our fallback feature list
+        features = []
+        for feature in feature_columns:
+            if feature in transaction_data:
+                # Convert categorical variables to numeric
+                value = transaction_data[feature]
+                if isinstance(value, str):
+                    # Very simple encoding - first character as numeric
+                    try:
+                        numeric_value = float(value[0].encode().hex(), 16) / 255.0
+                    except:
+                        numeric_value = 0.5
+                else:
+                    numeric_value = float(value)
+                features.append(numeric_value)
+            else:
+                features.append(0.0)
+        
+        # Reshape for sklearn
+        features = np.array(features).reshape(1, -1)
+        
+        print(f"Input features: {features}")
         
         # Make prediction
         try:
-            prediction = model.predict(prediction_df)[0]
-            probability = model.predict_proba(prediction_df)[0][1]
+            prediction = model.predict(features)[0]
+            probability = model.predict_proba(features)[0][1]
+            
+            print(f"Prediction: {prediction}, Probability: {probability}")
+            
+            return {
+                "status": "success",
+                "prediction": int(prediction),
+                "fraudProbability": float(probability),
+                "model_version": "v1.0 (minimal)",
+                "is_fallback": False
+            }
         except Exception as pred_error:
             print(f"Error in model prediction: {str(pred_error)}")
+            import traceback
+            traceback.print_exc()
             return predict_fallback(transaction_data)
         
-        return {
-            "status": "success",
-            "prediction": int(prediction),
-            "fraudProbability": float(probability),
-            "model_version": "v1.0 (minimal)",
-            "is_fallback": False
-        }
     except Exception as e:
         print(f"Prediction error: {str(e)}")
         print("Traceback:")
